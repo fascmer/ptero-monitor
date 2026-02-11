@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>翼龙面板监控 - 停机保活</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 {
+            text-align: center;
+            padding: 30px 0;
+            font-size: 2em;
+            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header-desc {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .card-title {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .form-group { margin-bottom: 15px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 14px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #7c3aed;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(90deg, #7c3aed, #00d4ff);
+            color: #fff;
+        }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-2px); }
+        .btn-danger { background: #ef4444; color: #fff; }
+        .btn-success { background: #22c55e; color: #fff; }
+        .btn-warning { background: #f59e0b; color: #fff; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .server-list { display: grid; gap: 15px; }
+        .server-item {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .server-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .server-name { font-size: 1.1em; font-weight: 600; }
+        .server-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        .server-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-running { background: #22c55e33; color: #22c55e; }
+        .status-offline { background: #ef444433; color: #ef4444; }
+        .status-starting { background: #f59e0b33; color: #f59e0b; }
+        .status-stopping { background: #f59e0b33; color: #f59e0b; }
+        .status-unknown { background: #64748b33; color: #64748b; }
+        .status-error { background: #ef444433; color: #ef4444; }
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #374151;
+            transition: .3s;
+            border-radius: 26px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        .toggle-switch input:checked + .toggle-slider { background-color: #7c3aed; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(24px); }
+        .logs-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .log-item {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .log-time { color: #64748b; }
+        .log-action { color: #00d4ff; }
+        .log-success { color: #22c55e; }
+        .log-failed { color: #ef4444; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: #1a1a2e;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-title {
+            font-size: 1.3em;
+            margin-bottom: 20px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+        .header-bar {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header-bar h1 {
+            margin: 0;
+            padding: 20px 0 5px 0;
+        }
+        .header-bar .header-desc {
+            margin: 0;
+        }
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .btn-logout {
+            background: #64748b;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-value { font-size: 1.5em; font-weight: bold; }
+        .stat-label { font-size: 0.8em; color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-bar">
+            <div></div>
+            <div>
+                <h1>🐉 翼龙面板监控</h1>
+                <p class="header-desc">Pterodactyl Server Monitor - 停机自动保活</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-sm" onclick="showSettings()">⚙️ 设置</button>
+                <button class="btn btn-sm btn-logout" id="logout-btn" style="display:none;" onclick="logout()">🚪 登出</button>
+            </div>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="total-servers">0</div>
+                <div class="stat-label">监控服务器</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="online-servers">0</div>
+                <div class="stat-label">在线</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="offline-servers">0</div>
+                <div class="stat-label">离线</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="total-restarts">0</div>
+                <div class="stat-label">自动重启次数</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">➕ 添加监控服务器</div>
+            <form id="add-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>服务器名称</label>
+                        <input type="text" id="name" placeholder="我的服务器" required>
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>API地址（包含服务器ID）</label>
+                        <input type="text" id="api_url" placeholder="https://panel.example.com/api/client/servers/a1b2c3d4" required>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="text" id="api_key" placeholder="ptlc_xxxxxx" required>
+                    </div>
+                    <div class="form-group">
+                        <label>监控间隔（秒）</label>
+                        <input type="number" id="interval" value="10" min="5">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>代理地址（可选，绕过CF防护）</label>
+                        <input type="text" id="proxy_url" placeholder="socks5://127.0.0.1:1080 或 http://127.0.0.1:8080">
+                    </div>
+                </div>
+                <p style="color:#888;font-size:12px;margin:10px 0;">💡 提示：如果遇到 Cloudflare 防护，可配置 SOCKS5/HTTP 代理绕过</p>
+                <button type="submit" class="btn btn-primary">添加服务器</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📡 监控列表</div>
+            <div class="server-list" id="server-list">
+                <div class="empty-state">暂无监控服务器，请添加</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📋 最近日志</div>
+            <div class="logs-container" id="logs-container">
+                <div class="empty-state">暂无日志</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="edit-modal">
+        <div class="modal-content">
+            <div class="modal-title">✏️ 编辑服务器</div>
+            <form id="edit-form">
+                <input type="hidden" id="edit-id">
+                <div class="form-group">
+                    <label>服务器名称</label>
+                    <input type="text" id="edit-name" required>
+                </div>
+                <div class="form-group">
+                    <label>API地址（包含服务器ID）</label>
+                    <input type="text" id="edit-api_url" required>
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="text" id="edit-api_key" required>
+                </div>
+                <div class="form-group">
+                    <label>监控间隔（秒）</label>
+                    <input type="number" id="edit-interval" min="5">
+                </div>
+                <div class="form-group">
+                    <label>代理地址（可选）</label>
+                    <input type="text" id="edit-proxy_url" placeholder="socks5://127.0.0.1:1080">
+                </div>
+                <div style="display:flex;gap:10px;margin-top:20px;">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                    <button type="button" class="btn" onclick="closeEditModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="logs-modal">
+        <div class="modal-content">
+            <div class="modal-title">📋 服务器日志</div>
+            <div class="logs-container" id="server-logs"></div>
+            <button class="btn" style="margin-top:15px;" onclick="closeLogsModal()">关闭</button>
+        </div>
+    </div>
+
+    <div class="modal" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-title">⚙️ 设置</div>
+            
+            <div class="settings-section">
+                <h4 style="margin-bottom:15px;color:#00d4ff;">🔐 访问认证</h4>
+                <p style="color:#888;font-size:13px;margin-bottom:15px;">设置账号密码后自动启用认证，清空则禁用认证</p>
+                
+                <div class="auth-status" id="auth-status" style="margin-bottom:15px;padding:10px;border-radius:8px;font-size:13px;"></div>
+                
+                <form id="auth-form">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="auth-username" placeholder="设置用户名">
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="auth-password" placeholder="设置密码">
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button type="submit" class="btn btn-primary">保存</button>
+                        <button type="button" class="btn btn-danger" onclick="disableAuth()">禁用认证</button>
+                    </div>
+                </form>
+            </div>
+            
+            <button class="btn" style="margin-top:20px;" onclick="closeSettingsModal()">关闭</button>
+        </div>
+    </div>
+
+    <script>
+        let servers = [];
+        let refreshInterval;
+
+        async function fetchServers() {
+            try {
+                const res = await fetch('/api/servers');
+                const data = await res.json();
+                if (data.success) {
+                    servers = data.servers;
+                    renderServers();
+                    updateStats();
+                }
+            } catch (e) {
+                console.error('Failed to fetch servers:', e);
+            }
+        }
+
+        async function fetchLogs() {
+            try {
+                const res = await fetch('/api/logs?limit=50');
+                const data = await res.json();
+                if (data.success) {
+                    renderLogs(data.logs);
+                }
+            } catch (e) {
+                console.error('Failed to fetch logs:', e);
+            }
+        }
+
+        function renderServers() {
+            const container = document.getElementById('server-list');
+            if (servers.length === 0) {
+                container.innerHTML = '<div class="empty-state">暂无监控服务器，请添加</div>';
+                return;
+            }
+
+            container.innerHTML = servers.map(s => `
+                <div class="server-item" data-id="${s.id}">
+                    <div class="server-header">
+                        <div>
+                            <span class="server-name">${escapeHtml(s.name)}</span>
+                            <span class="status-badge status-${s.last_status}">${getStatusText(s.last_status)}</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleServer(${s.id})">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="server-info">
+                        <div style="grid-column: span 2; word-break: break-all;">🔗 ${escapeHtml(getFullUrl(s))}</div>
+                        <div>⏱️ ${s.interval}秒</div>
+                        <div>🔄 重启${s.restart_count}次</div>
+                        <div>📡 ${s.last_check ? new Date(s.last_check).toLocaleString() : '未检查'}</div>
+                        ${s.proxy_url ? `<div style="grid-column: span 2;">🌐 代理: ${escapeHtml(s.proxy_url.substring(0, 50))}${s.proxy_url.length > 50 ? '...' : ''}</div>` : ''}
+                    </div>
+                    <div class="server-actions">
+                        <button class="btn btn-success btn-sm" onclick="powerAction(${s.id}, 'start')">启动</button>
+                        <button class="btn btn-warning btn-sm" onclick="powerAction(${s.id}, 'restart')">重启</button>
+                        <button class="btn btn-danger btn-sm" onclick="powerAction(${s.id}, 'stop')">停止</button>
+                        <button class="btn btn-sm" onclick="showLogs(${s.id})">日志</button>
+                        <button class="btn btn-sm" onclick="editServer(${s.id})">编辑</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteServer(${s.id})">删除</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function formatLogMessage(message) {
+            // 检测 Cloudflare 防护
+            if (message && (message.includes('Just a moment') || message.includes('Cloudflare') || message.includes('cf-') || (message.includes('403') && message.includes('DOCTYPE')))) {
+                return '⚠️ <span style="color:#f59e0b;">检测到 Cloudflare 防护，请检查API地址或联系面板管理员</span>';
+            }
+            return escapeHtml(message);
+        }
+
+        function renderLogs(logs) {
+            const container = document.getElementById('logs-container');
+            if (logs.length === 0) {
+                container.innerHTML = '<div class="empty-state">暂无日志</div>';
+                return;
+            }
+
+            container.innerHTML = logs.map(l => `
+                <div class="log-item">
+                    <span class="log-time">${new Date(l.created_at).toLocaleString()}</span>
+                    <span class="log-action">[${l.server_name || 'Unknown'}]</span>
+                    <span class="log-action">${l.action}</span>
+                    <span class="log-${l.status}">${l.status}</span>
+                    <span>${formatLogMessage(l.message)}</span>
+                </div>
+            `).join('');
+        }
+
+        function updateStats() {
+            document.getElementById('total-servers').textContent = servers.length;
+            document.getElementById('online-servers').textContent = servers.filter(s => s.last_status === 'running').length;
+            document.getElementById('offline-servers').textContent = servers.filter(s => s.last_status === 'offline').length;
+            document.getElementById('total-restarts').textContent = servers.reduce((sum, s) => sum + s.restart_count, 0);
+        }
+
+        function getStatusText(status) {
+            const map = {
+                'running': '运行中',
+                'offline': '离线',
+                'starting': '启动中',
+                'stopping': '停止中',
+                'unknown': '未知',
+                'error': '错误'
+            };
+            return map[status] || status;
+        }
+
+        function getFullUrl(server) {
+            // 如果 server_id 有效且不是 '-'，拼接完整 URL
+            if (server.server_id && server.server_id !== '-') {
+                const url = server.api_url.replace(/\/$/, '');
+                if (!url.endsWith(server.server_id)) {
+                    return url + '/' + server.server_id;
+                }
+            }
+            return server.api_url;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function toggleServer(id) {
+            try {
+                await fetch(`/api/servers/${id}/toggle`, { method: 'POST' });
+                fetchServers();
+            } catch (e) {
+                alert('操作失败: ' + e.message);
+            }
+        }
+
+        async function powerAction(id, action) {
+            try {
+                const res = await fetch(`/api/servers/${id}/power`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`${action} 命令已发送`);
+                } else {
+                    alert('失败: ' + data.error);
+                }
+                fetchServers();
+                fetchLogs();
+            } catch (e) {
+                alert('操作失败: ' + e.message);
+            }
+        }
+
+        async function deleteServer(id) {
+            if (!confirm('确定删除此服务器监控？')) return;
+            try {
+                await fetch(`/api/servers/${id}`, { method: 'DELETE' });
+                fetchServers();
+                fetchLogs();
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        function editServer(id) {
+            const server = servers.find(s => s.id === id);
+            if (!server) return;
+
+            document.getElementById('edit-id').value = server.id;
+            document.getElementById('edit-name').value = server.name;
+            document.getElementById('edit-api_url').value = getFullUrl(server);
+            document.getElementById('edit-api_key').value = server.api_key;
+            document.getElementById('edit-interval').value = server.interval;
+            document.getElementById('edit-proxy_url').value = server.proxy_url || '';
+
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function showLogs(id) {
+            try {
+                const res = await fetch(`/api/servers/${id}/logs?limit=50`);
+                const data = await res.json();
+                if (data.success) {
+                    const container = document.getElementById('server-logs');
+                    if (data.logs.length === 0) {
+                        container.innerHTML = '<div class="empty-state">暂无日志</div>';
+                    } else {
+                        container.innerHTML = data.logs.map(l => `
+                            <div class="log-item">
+                                <span class="log-time">${new Date(l.created_at).toLocaleString()}</span>
+                                <span class="log-action">${l.action}</span>
+                                <span class="log-${l.status}">${l.status}</span>
+                                <span>${escapeHtml(l.message)}</span>
+                            </div>
+                        `).join('');
+                    }
+                    document.getElementById('logs-modal').classList.add('active');
+                }
+            } catch (e) {
+                alert('获取日志失败: ' + e.message);
+            }
+        }
+
+        function closeLogsModal() {
+            document.getElementById('logs-modal').classList.remove('active');
+        }
+
+        document.getElementById('add-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = {
+                name: document.getElementById('name').value,
+                api_url: document.getElementById('api_url').value,
+                api_key: document.getElementById('api_key').value,
+                server_id: '-',  // 从 URL 自动解析
+                interval: parseInt(document.getElementById('interval').value) || 10,
+                proxy_url: document.getElementById('proxy_url').value.trim()
+            };
+
+            try {
+                const res = await fetch('/api/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    e.target.reset();
+                    document.getElementById('interval').value = 10;
+                    fetchServers();
+                } else {
+                    alert('添加失败: ' + result.error);
+                }
+            } catch (err) {
+                alert('添加失败: ' + err.message);
+            }
+        });
+
+        document.getElementById('edit-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('edit-id').value;
+            const data = {
+                name: document.getElementById('edit-name').value,
+                api_url: document.getElementById('edit-api_url').value,
+                api_key: document.getElementById('edit-api_key').value,
+                server_id: '-',
+                interval: parseInt(document.getElementById('edit-interval').value) || 10,
+                proxy_url: document.getElementById('edit-proxy_url').value.trim()
+            };
+
+            try {
+                const res = await fetch(`/api/servers/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    closeEditModal();
+                    fetchServers();
+                } else {
+                    alert('更新失败: ' + result.error);
+                }
+            } catch (err) {
+                alert('更新失败: ' + err.message);
+            }
+        });
+
+        // 点击模态框外部关闭
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                }
+            });
+        });
+
+        // 设置相关
+        async function checkAuthStatus() {
+            try {
+                const res = await fetch('/api/auth/status');
+                const data = await res.json();
+                if (data.auth_enabled) {
+                    document.getElementById('logout-btn').style.display = 'inline-block';
+                }
+                return data;
+            } catch (e) {
+                console.error('Failed to check auth status:', e);
+            }
+        }
+
+        function showSettings() {
+            checkAuthStatus().then(data => {
+                const statusEl = document.getElementById('auth-status');
+                if (data && data.auth_enabled) {
+                    statusEl.innerHTML = '✅ 认证已启用';
+                    statusEl.style.background = 'rgba(34, 197, 94, 0.2)';
+                    statusEl.style.color = '#22c55e';
+                } else {
+                    statusEl.innerHTML = '⚠️ 认证未启用，任何人都可以访问';
+                    statusEl.style.background = 'rgba(245, 158, 11, 0.2)';
+                    statusEl.style.color = '#f59e0b';
+                }
+            });
+            document.getElementById('settings-modal').classList.add('active');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        document.getElementById('auth-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            
+            if (!username || !password) {
+                alert('用户名和密码都不能为空');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/auth/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('认证设置成功！');
+                    document.getElementById('auth-username').value = '';
+                    document.getElementById('auth-password').value = '';
+                    checkAuthStatus();
+                    showSettings(); // 刷新状态
+                } else {
+                    alert('设置失败: ' + data.error);
+                }
+            } catch (err) {
+                alert('设置失败: ' + err.message);
+            }
+        });
+
+        async function disableAuth() {
+            if (!confirm('确定禁用认证？禁用后任何人都可以访问面板')) return;
+            
+            try {
+                const res = await fetch('/api/auth/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: '', password: '' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('认证已禁用');
+                    document.getElementById('logout-btn').style.display = 'none';
+                    showSettings(); // 刷新状态
+                } else {
+                    alert('操作失败: ' + data.error);
+                }
+            } catch (err) {
+                alert('操作失败: ' + err.message);
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (err) {
+                alert('登出失败');
+            }
+        }
+
+        // 初始化
+        checkAuthStatus();
+        fetchServers();
+        fetchLogs();
+
+        // 每5秒刷新一次
+        refreshInterval = setInterval(() => {
+            fetchServers();
+            fetchLogs();
+        }, 5000);
+    </script>
+</body>
+</html>
