@@ -7,7 +7,6 @@ Pterodactyl Panel Server Monitor & Auto-Restart
 import os
 import json
 import asyncio
-import aiohttp
 import sqlite3
 import time
 import logging
@@ -16,7 +15,7 @@ import hashlib
 from datetime import datetime
 from aiohttp import web
 from typing import Dict, Optional
-from aiohttp_socks import ProxyConnector, ProxyType
+from curl_cffi.requests import AsyncSession
 
 # 配置
 PORT = int(os.environ.get('PORT', 8000))
@@ -100,28 +99,6 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-def get_proxy_connector(proxy_url: str):
-    """根据代理URL创建连接器
-    支持格式:
-    - socks5://host:port
-    - socks5://user:pass@host:port
-    - http://host:port
-    - http://user:pass@host:port
-    """
-    if not proxy_url:
-        return None
-    
-    proxy_url = proxy_url.strip()
-    
-    if proxy_url.startswith(('socks5://', 'socks4://', 'http://', 'https://')):
-        try:
-            return ProxyConnector.from_url(proxy_url)
-        except Exception as e:
-            logger.error(f"Failed to create proxy connector: {e}")
-            return None
-    
-    return None
-
 def parse_server_url(full_url: str) -> tuple:
     """从完整URL解析出base_url和server_id
     例如: https://cp.host2play.gratis/api/client/servers/c271ea0c-85dd-49c2-b5c7-154c608f6f49
@@ -154,9 +131,7 @@ async def fetch_server_status(api_url: str, api_key: str, server_id: str = None,
             base_url = f"{base_url}/{server_id}" if not base_url.endswith('/') else f"{base_url}{server_id}"
     
     resources_url = f"{base_url}/{server_id}/resources"
-    
-    # 创建代理连接器
-    connector = get_proxy_connector(proxy_url) if proxy_url else None
+    proxy = proxy_url.strip() if proxy_url else None
     
     headers = {
         'Authorization': f'Bearer {api_key}',
@@ -165,18 +140,18 @@ async def fetch_server_status(api_url: str, api_key: str, server_id: str = None,
     }
     
     try:
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(resources_url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return {
-                        'success': True,
-                        'status': data.get('attributes', {}).get('current_state', 'unknown'),
-                        'resources': data.get('attributes', {})
-                    }
-                else:
-                    text = await resp.text()
-                    return {'success': False, 'error': f'HTTP {resp.status}: {text[:200]}'}
+        async with AsyncSession(impersonate="chrome", proxy=proxy, timeout=15) as session:
+            resp = await session.get(resources_url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    'success': True,
+                    'status': data.get('attributes', {}).get('current_state', 'unknown'),
+                    'resources': data.get('attributes', {})
+                }
+            else:
+                text = resp.text
+                return {'success': False, 'error': f'HTTP {resp.status_code}: {text[:200]}'}
     except asyncio.TimeoutError:
         return {'success': False, 'error': 'Request timeout'}
     except Exception as e:
@@ -195,9 +170,7 @@ async def send_power_action(api_url: str, api_key: str, server_id: str, action: 
             base_url = f"{base_url}/{server_id}" if not base_url.endswith('/') else f"{base_url}{server_id}"
     
     power_url = f"{base_url}/{server_id}/power"
-    
-    # 创建代理连接器
-    connector = get_proxy_connector(proxy_url) if proxy_url else None
+    proxy = proxy_url.strip() if proxy_url else None
     
     headers = {
         'Authorization': f'Bearer {api_key}',
@@ -206,13 +179,13 @@ async def send_power_action(api_url: str, api_key: str, server_id: str, action: 
     }
     
     try:
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.post(power_url, headers=headers, json={'signal': action}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status in [200, 204]:
-                    return {'success': True}
-                else:
-                    text = await resp.text()
-                    return {'success': False, 'error': f'HTTP {resp.status}: {text[:200]}'}
+        async with AsyncSession(impersonate="chrome", proxy=proxy, timeout=15) as session:
+            resp = await session.post(power_url, headers=headers, json={'signal': action})
+            if resp.status_code in [200, 204]:
+                return {'success': True}
+            else:
+                text = resp.text
+                return {'success': False, 'error': f'HTTP {resp.status_code}: {text[:200]}'}
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
