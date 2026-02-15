@@ -1,4 +1,4 @@
-# 🐉 Pterodactyl Monitor - 翼龙面板服务器监控保活
+# 🐉 Pterodactyl Monitor - 翼龙面板服务器监控保活（点个小星星呗）
 
 翼龙面板 (Pterodactyl Panel) 服务器监控工具，自动检测服务器状态，当服务器离线时自动发送启动命令，实现停机保活功能。
 
