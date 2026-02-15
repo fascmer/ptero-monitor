@@ -739,6 +739,103 @@ async def on_shutdown(app):
         task.cancel()
     logger.info("All monitors stopped")
 
+# ==================== 备份导出/导入 ====================
+
+async def api_export_backup(request):
+    """导出备份 - 包含所有服务器配置"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT name, api_url, api_key, server_id, interval, enabled, proxy_url FROM servers')
+        servers = c.fetchall()
+        conn.close()
+        
+        backup_data = {
+            'version': '1.0',
+            'exported_at': datetime.now().isoformat(),
+            'servers': [
+                {
+                    'name': s['name'],
+                    'api_url': s['api_url'],
+                    'api_key': s['api_key'],
+                    'server_id': s['server_id'],
+                    'interval': s['interval'],
+                    'enabled': bool(s['enabled']),
+                    'proxy_url': s['proxy_url'] or ''
+                }
+                for s in servers
+            ]
+        }
+        
+        response = web.Response(
+            text=json.dumps(backup_data, indent=2, ensure_ascii=False),
+            content_type='application/json',
+            headers={
+                'Content-Disposition': f'attachment; filename="ptero-monitor-backup-{datetime.now().strftime("%Y%m%d-%H%M%S")}.json"'
+            }
+        )
+        return response
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+async def api_import_backup(request):
+    """导入备份 - 恢复服务器配置"""
+    try:
+        data = await request.json()
+        
+        if 'servers' not in data:
+            return web.json_response({'success': False, 'error': '无效的备份文件格式'}, status=400)
+        
+        conn = get_db()
+        c = conn.cursor()
+        
+        imported = 0
+        skipped = 0
+        
+        for server in data['servers']:
+            # 检查是否已存在（根据 api_url + server_id 判断）
+            c.execute('SELECT id FROM servers WHERE api_url = ? AND server_id = ?', 
+                     (server.get('api_url', ''), server.get('server_id', '')))
+            existing = c.fetchone()
+            
+            if existing:
+                skipped += 1
+                continue
+            
+            c.execute('''
+                INSERT INTO servers (name, api_url, api_key, server_id, interval, enabled, proxy_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                server.get('name', '未命名'),
+                server.get('api_url', ''),
+                server.get('api_key', ''),
+                server.get('server_id', ''),
+                server.get('interval', 10),
+                1 if server.get('enabled', True) else 0,
+                server.get('proxy_url', '')
+            ))
+            
+            server_id = c.lastrowid
+            imported += 1
+            
+            # 如果启用了监控，启动监控任务
+            if server.get('enabled', True):
+                start_monitor(server_id)
+        
+        conn.commit()
+        conn.close()
+        
+        return web.json_response({
+            'success': True,
+            'message': f'导入完成: {imported} 个新服务器, {skipped} 个已存在跳过',
+            'imported': imported,
+            'skipped': skipped
+        })
+    except json.JSONDecodeError:
+        return web.json_response({'success': False, 'error': 'JSON 解析失败'}, status=400)
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
 def create_app():
     """创建应用"""
     app = web.Application(middlewares=[auth_middleware])
@@ -762,6 +859,10 @@ def create_app():
     app.router.add_post('/api/login', api_login)
     app.router.add_post('/api/logout', api_logout)
     app.router.add_post('/api/auth/set', api_set_auth)
+    
+    # 备份导出/导入
+    app.router.add_get('/api/backup/export', api_export_backup)
+    app.router.add_post('/api/backup/import', api_import_backup)
     
     # 静态文件
     app.router.add_static('/static/', 'static')

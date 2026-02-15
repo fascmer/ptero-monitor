@@ -373,6 +373,18 @@
                 </form>
             </div>
             
+            <div class="settings-section" style="margin-top:20px;border-top:1px solid #333;padding-top:20px;">
+                <h4 style="margin-bottom:15px;color:#00d4ff;">📦 数据备份</h4>
+                <p style="color:#888;font-size:13px;margin-bottom:15px;">导出/导入服务器配置，方便迁移或备份</p>
+                
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-primary" onclick="exportBackup()">📤 导出备份</button>
+                    <button type="button" class="btn btn-success" onclick="document.getElementById('import-file').click()">📥 导入备份</button>
+                    <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importBackup(this)">
+                </div>
+                <p id="backup-status" style="color:#888;font-size:12px;margin-top:10px;"></p>
+            </div>
+            
             <button class="btn" style="margin-top:20px;" onclick="closeSettingsModal()">关闭</button>
         </div>
     </div>
@@ -748,6 +760,61 @@
             } catch (err) {
                 alert('操作失败: ' + err.message);
             }
+        }
+
+        // 导出备份
+        async function exportBackup() {
+            try {
+                document.getElementById('backup-status').textContent = '正在导出...';
+                const res = await fetch('/api/backup/export');
+                if (!res.ok) throw new Error('Export failed');
+                
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ptero-monitor-backup-${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                document.getElementById('backup-status').textContent = '✅ 导出成功!';
+                setTimeout(() => document.getElementById('backup-status').textContent = '', 3000);
+            } catch (err) {
+                document.getElementById('backup-status').textContent = '❌ 导出失败: ' + err.message;
+            }
+        }
+
+        // 导入备份
+        async function importBackup(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            try {
+                document.getElementById('backup-status').textContent = '正在导入...';
+                const text = await file.text();
+                const data = JSON.parse(text);
+                
+                const res = await fetch('/api/backup/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                
+                if (result.success) {
+                    document.getElementById('backup-status').textContent = `✅ ${result.message}`;
+                    fetchServers(); // 刷新列表
+                    setTimeout(() => document.getElementById('backup-status').textContent = '', 5000);
+                } else {
+                    document.getElementById('backup-status').textContent = '❌ ' + result.error;
+                }
+            } catch (err) {
+                document.getElementById('backup-status').textContent = '❌ 导入失败: ' + err.message;
+            }
+            
+            input.value = ''; // 清空文件选择
         }
 
         async function logout() {
